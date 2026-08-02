@@ -277,6 +277,17 @@ function CalorieLedger() {
   const [customFoods, setCustomFoods] = useState({}); // key: lowercase food name -> {name, calories, serving, source}
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
+  const [macroEditId, setMacroEditId] = useState(null);
+  const [macroDraft, setMacroDraft] = useState({
+    protein: "0",
+    fat: "0",
+    satFat: "0",
+    transFat: "0",
+    carbs: "0",
+    fiber: "0",
+    sugar: "0",
+    sodium: "0",
+  });
 
   const [gender, setGender] = useState("");
   const [age, setAge] = useState("");
@@ -687,6 +698,55 @@ function CalorieLedger() {
     setEditingId(null);
   }
 
+  function toggleMacroEdit(entry) {
+    if (macroEditId === entry.id) {
+      setMacroEditId(null);
+      return;
+    }
+    setMacroDraft({
+      protein: String(entry.protein || 0),
+      fat: String(entry.fat || 0),
+      satFat: String(entry.satFat || 0),
+      transFat: String(entry.transFat || 0),
+      carbs: String(entry.carbs || 0),
+      fiber: String(entry.fiber || 0),
+      sugar: String(entry.sugar || 0),
+      sodium: String(entry.sodium || 0),
+    });
+    setMacroEditId(entry.id);
+  }
+
+  function updateMacroDraft(key, value) {
+    const cleaned = value.replace(/[^0-9.]/g, "");
+    setMacroDraft((prev) => ({ ...prev, [key]: cleaned }));
+  }
+
+  function commitMacroEdit(entry) {
+    const num = (v) => {
+      const n = Number(v);
+      return v !== "" && !Number.isNaN(n) ? n : 0;
+    };
+    const updatedMacros = {
+      protein: num(macroDraft.protein),
+      fat: num(macroDraft.fat),
+      satFat: num(macroDraft.satFat),
+      transFat: num(macroDraft.transFat),
+      carbs: num(macroDraft.carbs),
+      fiber: num(macroDraft.fiber),
+      sugar: num(macroDraft.sugar),
+      sodium: num(macroDraft.sodium),
+    };
+    setEntries((prev) => prev.map((en) => (en.id === entry.id ? { ...en, ...updatedMacros } : en)));
+    upsertCustomFood({
+      name: entry.name,
+      calories: entry.calories,
+      serving: entry.serving,
+      source: "edited",
+      ...updatedMacros,
+    });
+    setMacroEditId(null);
+  }
+
   function removeEntry(id) {
     setEntries((prev) => prev.filter((e) => e.id !== id));
   }
@@ -909,9 +969,10 @@ function CalorieLedger() {
 
         .ledger-list { border-top: 1px solid var(--ink); }
         .ledger-eyebrow { display:flex; justify-content: space-between; padding: 10px 0 6px; font-family:'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); }
+        .ledger-item { border-bottom: 1px solid var(--rule); }
         .ledger-row {
           display: flex; align-items: center; gap: 10px;
-          padding: 11px 0; border-bottom: 1px solid var(--rule);
+          padding: 11px 0;
         }
         .ledger-icon { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display:flex; align-items:center; justify-content:center; }
         .ledger-icon.food { background: var(--in-soft); color: #6B4C12; }
@@ -919,6 +980,7 @@ function CalorieLedger() {
         .ledger-main { flex: 1; min-width: 0; }
         .ledger-name { font-size: 14px; font-weight: 500; }
         .ledger-sub { font-size: 12px; color: var(--ink-soft); }
+        .nutrition-toggle { border: none; background: none; cursor: pointer; padding: 0; font-size: 12px; color: var(--out); font-family: 'IBM Plex Sans', sans-serif; }
         .servings-ctrl { display: flex; align-items: center; gap: 4px; font-family:'IBM Plex Mono', monospace; font-size: 12px; }
         .servings-ctrl button { border: 1px solid var(--rule); background: none; width: 20px; height: 20px; cursor: pointer; display:flex; align-items:center; justify-content:center; color: var(--ink-soft); }
         .servings-ctrl button:hover { border-color: var(--ink); color: var(--ink); }
@@ -936,6 +998,11 @@ function CalorieLedger() {
         .cal-edit-input:focus { outline: none; }
         .remove-btn { border: none; background: none; cursor: pointer; color: var(--ink-soft); padding: 4px; }
         .remove-btn:hover { color: var(--warn); }
+        .macro-edit-panel {
+          background: var(--paper-raised); border-top: 1px dashed var(--rule);
+          padding: 10px 4px 14px; margin-bottom: 4px;
+        }
+        .macro-edit-actions { display: flex; gap: 8px; margin-top: 10px; }
 
         .empty-state { padding: 30px 0; text-align: center; color: var(--ink-soft); font-size: 13px; }
 
@@ -1413,44 +1480,89 @@ function CalorieLedger() {
           </div>
           {sortedEntries.length === 0 && <div className="empty-state">Nothing logged yet — add a food or a workout above.</div>}
           {sortedEntries.map((e) => (
-            <div className="ledger-row" key={e.id}>
-              <div className={`ledger-icon ${e.type}`}>
-                {e.type === "food" ? <UtensilsCrossed size={13} /> : <Flame size={13} />}
-              </div>
-              <div className="ledger-main">
-                <div className="ledger-name">{e.name}</div>
-                <div className="ledger-sub">
-                  {e.type === "food" ? `${e.serving}${e.source === "web" ? " · via search" : ""}` : "workout"}
+            <div className="ledger-item" key={e.id}>
+              <div className="ledger-row">
+                <div className={`ledger-icon ${e.type}`}>
+                  {e.type === "food" ? <UtensilsCrossed size={13} /> : <Flame size={13} />}
                 </div>
+                <div className="ledger-main">
+                  <div className="ledger-name">{e.name}</div>
+                  <div className="ledger-sub">
+                    {e.type === "food" ? `${e.serving}${e.source === "web" ? " · via search" : ""}` : "workout"}
+                    {e.type === "food" && (
+                      <button className="nutrition-toggle" onClick={() => toggleMacroEdit(e)}>
+                        {macroEditId === e.id ? " · hide nutrition" : " · nutrition"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {e.type === "food" && (
+                  <div className="servings-ctrl">
+                    <button onClick={() => adjustServings(e.id, -0.5)}><ChevronDown size={12} /></button>
+                    <span>{e.servings}×</span>
+                    <button onClick={() => adjustServings(e.id, 0.5)}><ChevronUp size={12} /></button>
+                  </div>
+                )}
+                <div className={`ledger-cal ${e.type}`}>
+                  {editingId === e.id ? (
+                    <input
+                      className="cal-edit-input"
+                      autoFocus
+                      inputMode="numeric"
+                      value={editValue}
+                      onChange={(ev) => setEditValue(ev.target.value.replace(/[^0-9]/g, ""))}
+                      onBlur={() => commitEdit(e)}
+                      onKeyDown={(ev) => ev.key === "Enter" && ev.currentTarget.blur()}
+                    />
+                  ) : (
+                    <span className="cal-figure" title="Tap to edit" onClick={() => startEdit(e)}>
+                      {e.type === "food" ? "+" : "−"}
+                      {e.type === "food" ? Math.round(e.calories * e.servings) : e.calories}
+                    </span>
+                  )}
+                </div>
+                <button className="remove-btn" onClick={() => removeEntry(e.id)}>
+                  <X size={14} />
+                </button>
               </div>
-              {e.type === "food" && (
-                <div className="servings-ctrl">
-                  <button onClick={() => adjustServings(e.id, -0.5)}><ChevronDown size={12} /></button>
-                  <span>{e.servings}×</span>
-                  <button onClick={() => adjustServings(e.id, 0.5)}><ChevronUp size={12} /></button>
+
+              {e.type === "food" && macroEditId === e.id && (
+                <div className="macro-edit-panel">
+                  <div className="manual-macro-grid">
+                    {MACRO_FIELDS.map((f) => (
+                      <label className="manual-macro-field" key={f.key}>
+                        <span>{f.label}</span>
+                        <input
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={macroDraft[f.key]}
+                          onChange={(ev) => updateMacroDraft(f.key, ev.target.value)}
+                        />
+                        <span className="manual-macro-unit">g</span>
+                      </label>
+                    ))}
+                    <label className="manual-macro-field">
+                      <span>Sodium</span>
+                      <input
+                        inputMode="decimal"
+                        placeholder="0"
+                        value={macroDraft.sodium}
+                        onChange={(ev) => updateMacroDraft("sodium", ev.target.value)}
+                      />
+                      <span className="manual-macro-unit">mg</span>
+                    </label>
+                  </div>
+                  <div className="macro-edit-actions">
+                    <button className="pill-btn" onClick={() => commitMacroEdit(e)}>
+                      Save
+                    </button>
+                    <button className="pill-btn secondary" onClick={() => setMacroEditId(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                  <div className="insights-note">These values become the new default for &ldquo;{e.name}&rdquo;.</div>
                 </div>
               )}
-              <div className={`ledger-cal ${e.type}`}>
-                {editingId === e.id ? (
-                  <input
-                    className="cal-edit-input"
-                    autoFocus
-                    inputMode="numeric"
-                    value={editValue}
-                    onChange={(ev) => setEditValue(ev.target.value.replace(/[^0-9]/g, ""))}
-                    onBlur={() => commitEdit(e)}
-                    onKeyDown={(ev) => ev.key === "Enter" && ev.currentTarget.blur()}
-                  />
-                ) : (
-                  <span className="cal-figure" title="Tap to edit" onClick={() => startEdit(e)}>
-                    {e.type === "food" ? "+" : "−"}
-                    {e.type === "food" ? Math.round(e.calories * e.servings) : e.calories}
-                  </span>
-                )}
-              </div>
-              <button className="remove-btn" onClick={() => removeEntry(e.id)}>
-                <X size={14} />
-              </button>
             </div>
           ))}
         </div>
